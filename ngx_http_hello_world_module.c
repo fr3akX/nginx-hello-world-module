@@ -139,11 +139,10 @@ void echo_reading_callback(ngx_event_t *wev)
     /* Send the body, and return the status code of the output filter chain. */
     ngx_http_output_filter(r, &out);
 
-    if(ctx->chunks_to_send > 0) {
+    if(ctx->chunks_to_send > 0 && !ctx->request->connection->write->error) {
         printf("Adding timer\n");
         ngx_add_timer(&ctx->wev, (ngx_msec_t)1000);
     } else {
-        printf("Finalizing request\n");
         ngx_http_finalize_request(r, NGX_OK);
     }
 
@@ -152,15 +151,10 @@ void echo_reading_callback(ngx_event_t *wev)
 static void
 ngx_http_hello_cleanup(void *data)
 {
-    ngx_http_echo_ctx_t *state = (ngx_http_echo_ctx_t *) data;
-
-    if(state->wev.timer_set) {
-        printf("Deleting timer\n");
-        ngx_del_timer(&state->wev);
-        return;
-    }else{
-        printf("Not deleting timer\n");
-    }
+    ngx_http_echo_ctx_t *ctx = (ngx_http_echo_ctx_t *) data;
+    ctx->request->main->count--;
+    if(!ctx->wev.timer_set) return;
+    ngx_del_timer(&ctx->wev);
 }
 
 ngx_http_echo_ctx_t *
