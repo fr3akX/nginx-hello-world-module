@@ -1,31 +1,3 @@
-/**
- * @file   ngx_http_hello_world_module.c
- * @author António P. P. Almeida <appa@perusio.net>
- * @date   Wed Aug 17 12:06:52 2011
- *
- * @brief  A hello world module for Nginx.
- *
- * @section LICENSE
- *
- * Copyright (C) 2011 by Dominic Fallows, António P. P. Almeida <appa@perusio.net>
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- *
- */
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
@@ -36,10 +8,6 @@
 static char *ngx_http_hello_world(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_hello_world_handler(ngx_http_request_t *r);
 
-/**
- * This module provided directive: hello world.
- *
- */
 static ngx_command_t ngx_http_hello_world_commands[] = {
 
     { ngx_string("hello_world"), /* directive */
@@ -53,10 +21,8 @@ static ngx_command_t ngx_http_hello_world_commands[] = {
     ngx_null_command /* command termination */
 };
 
-/* The hello world string. */
 static u_char ngx_hello_world[] = HELLO_WORLD;
 
-/* The module context. */
 static ngx_http_module_t ngx_http_hello_world_module_ctx = {
     NULL, /* preconfiguration */
     NULL, /* postconfiguration */
@@ -71,7 +37,6 @@ static ngx_http_module_t ngx_http_hello_world_module_ctx = {
     NULL /* merge location configuration */
 };
 
-/* Module definition. */
 ngx_module_t ngx_http_hello_world_module = {
     NGX_MODULE_V1,
     &ngx_http_hello_world_module_ctx, /* module context */
@@ -92,6 +57,16 @@ typedef struct {
     ngx_http_request_t *request;
     unsigned int chunks_to_send;
 } ngx_http_echo_ctx_t;
+
+static void create_ev(ngx_event_t *rev, ngx_msec_t time) {
+    ngx_add_timer(rev, time);
+}
+
+static void delete_ev(ngx_event_t *rev) {
+    if(rev->timer_set) {
+        ngx_del_timer(rev);
+    }
+}
 
 static
 void echo_reading_callback(ngx_event_t *wev)
@@ -141,20 +116,22 @@ void echo_reading_callback(ngx_event_t *wev)
 
     if(ctx->chunks_to_send > 0 && !ctx->request->connection->write->error) {
         printf("Adding timer\n");
-        ngx_add_timer(&ctx->wev, (ngx_msec_t)1000);
+        delete_ev(&ctx->wev);
+        create_ev(&ctx->wev, (ngx_msec_t)1000);
     } else {
-        ngx_http_finalize_request(r, NGX_OK);
+    //    ctx->request->main->count--;
+        ngx_http_finalize_request(r, NGX_DONE);
     }
-
 }
 
 static void
 ngx_http_hello_cleanup(void *data)
 {
+
+printf("3.1. XXXXXX ngx_http_hello_cleanup\n");
     ngx_http_echo_ctx_t *ctx = (ngx_http_echo_ctx_t *) data;
-    ctx->request->main->count--;
-    if(!ctx->wev.timer_set) return;
-    ngx_del_timer(&ctx->wev);
+    ctx->wev.timedout = 0;
+    delete_ev(&ctx->wev);
 }
 
 ngx_http_echo_ctx_t *
@@ -167,9 +144,6 @@ ngx_http_echo_create_ctx(ngx_http_request_t *r)
         return NULL;
     }
 
-    ctx->wev.handler   = echo_reading_callback;
-    ctx->wev.data      = ctx;
-    ctx->wev.log       = r->connection->log;
     ctx->request = r;
     ctx->chunks_to_send = 10;
 
@@ -180,14 +154,6 @@ ngx_http_echo_create_ctx(ngx_http_request_t *r)
     return ctx;
 }
 
-/**
- * Content handler.
- *
- * @param r
- *   Pointer to the request structure. See http_request.h.
- * @return
- *   The status of the response generation.
- */
 static ngx_int_t ngx_http_hello_world_handler(ngx_http_request_t *r)
 {
     r->request_body_no_buffering = 1;
@@ -195,23 +161,17 @@ static ngx_int_t ngx_http_hello_world_handler(ngx_http_request_t *r)
 
     ngx_http_echo_ctx_t *ctx;
     ctx = ngx_http_echo_create_ctx(r);
-    ngx_add_timer(&ctx->wev, (ngx_msec_t)1000);
+
+    ctx->wev.handler   = echo_reading_callback;
+    ctx->wev.data      = ctx;
+    ctx->wev.log       = r->connection->log;
+
+    create_ev(&ctx->wev, (ngx_msec_t)1000);
+
     r->main->count++;
-    return NGX_DONE;
+    return NGX_AGAIN;
 } /* ngx_http_hello_world_handler */
 
-/**
- * Configuration setup function that installs the content handler.
- *
- * @param cf
- *   Module configuration structure pointer.
- * @param cmd
- *   Module directives structure pointer.
- * @param conf
- *   Module configuration structure pointer.
- * @return string
- *   Status of the configuration setup.
- */
 static char *ngx_http_hello_world(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_http_core_loc_conf_t *clcf; /* pointer to core location configuration */
